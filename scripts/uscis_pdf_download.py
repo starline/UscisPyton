@@ -11,13 +11,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Настройки
 TARGET_URL = (
-    "https://www.uscis.gov/administrative-appeals/aao-decisions/"
-    "aao-non-precedent-decisions?uri_1=18&m=All&y=1&items_per_page=100"
+    "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non-precedent-decisions?uri_1=18&m=All&y=2&items_per_page=100"
 )
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "files", "uscis_pdfs")
 
 
-def download_pdfs(url: str, output_dir: str) -> None:
+def download_pdfs(url: str, output_dir: str) -> int:
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -27,6 +26,7 @@ def download_pdfs(url: str, output_dir: str) -> None:
     soup = BeautifulSoup(response.text, "html.parser")
 
     links = soup.find_all("a", href=True)
+    downloaded = 0
 
     for link in links:
         href = link["href"]
@@ -40,10 +40,13 @@ def download_pdfs(url: str, output_dir: str) -> None:
                 file_data.raise_for_status()
                 with open(file_name, "wb") as f:
                     f.write(file_data.content)
+                downloaded += 1
             except Exception as e:
                 print(f"Ошибка при загрузке {file_url}: {e}", file=sys.stderr)
 
+    return downloaded
+
 
 if __name__ == "__main__":
-    download_pdfs(TARGET_URL, OUTPUT_DIR)
-    print("Готово!")
+    n = download_pdfs(TARGET_URL, OUTPUT_DIR)
+    print(f"Готово! Скачано файлов: {n}")
