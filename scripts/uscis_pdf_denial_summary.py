@@ -6,10 +6,10 @@
   2) Для каждого PDF последовательно извлекаем текст (не более первых 12 000 символов,
      считая переводы строк между страницами; дальнейшие страницы не читаются) — без OCR,
      только встроенный текст; отсканированные страницы без слоя текста дадут пустой результат.
-  3) Извлечённый текст отправляем в Chat Completions API OpenAI с инструкцией выделить
-     суть отказа одним предложением на русском.
-  4) Для каждого файла формируем одну строку: «имя.pdf<TAB>результат» и записываем все
-     строки в summary_denids.txt (кодировка UTF-8, в конце файла перевод строки).
+  3) Извлечённый текст отправляем в Chat Completions API OpenAI: в JSON возвращаются
+     профессия/специальность по делу и суть отказа одним предложением (на русском).
+  4) Для каждого файла одна строка TSV: «имя.pdf<TAB>профессия заявителя<TAB>причина отказа»
+     и записываем все строки в summary_denids.txt (кодировка UTF-8, в конце файла перевод строки).
 
 Переменные окружения:
   OPENAI_API_KEY — ключ API (обязательно)
@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -37,25 +38,28 @@ OUTPUT_FILENAME = "summary_denids.txt"
 # Максимум символов, извлекаемых из PDF (начало документа; перевод строки между страницами входит в лимит).
 PDF_TEXT_MAX_CHARS = 12_000
 # Для тестов: не более стольких PDF подряд (после sorted по имени). None — обработать все файлы в каталоге.
-MAX_PDF_FILES_FOR_TEST: int | None = 5
+MAX_PDF_FILES_FOR_TEST: int | None = 20
 
-# Системное сообщение задаёт «роль» модели и формат ответа (одно предложение, русский язык).
-SYSTEM_PROMPT = (
+# Ответ только JSON (режим json_object у API); поля парсятся в analyze_case.
+SYSTEM_PROMPT_JSON = (
     "Ты помощник по анализу административных решений USCIS/AAO. "
-    "Отвечай только одним предложением на русском языке, без кавычек в начале и конце."
+    "Отвечай только одним JSON-объектом на русском языке в значениях полей, без текста до или после JSON."
 )
 
-# Пользовательский промпт: в {text} подставляется тело документа. Явно просим различать
-# случай «есть отказ» / «отказа нет» / «недостаточно данных», чтобы выход был предсказуемым.
-USER_TEMPLATE = """Ниже текст документа (решение по делу). Задача:
-1) Определи, есть ли отказ в удовлетворении апелляции/ходатайства или иное решение об отказе.
-2) Если да — опиши главную причину отказа ОДНИМ предложением.
-3) Если отказа нет или текст не позволяет судить — одним предложением укажи это кратко.
+# В {text} — фрагмент решения. Модель возвращает profession + denial для строки summary_denids.txt.
+USER_TEMPLATE_JSON = """Ниже фрагмент текста решения по делу (петиция/апелляция и т.д.).
+
+Сделай:
+1) profession: к какой профессии, специальности или должности относится дело по смыслу документа (обычно позиция/специальность бенефициара петиции или предлагаемая работа) — кратко, одной фразой (например: «инженер-программист», «врач»). Если по отрывку нельзя определить — напиши: «не указано в тексте».
+2) denial: есть ли отказ в удовлетворении апелляции/ходатайства; если да — ОДНО предложение с главной причиной отказа; если отказа нет или судить нельзя — одно предложение об этом.
 
 Текст документа:
 ---
 {text}
 ---
+
+Верни строго JSON вида:
+{{"profession": "...", "denial": "..."}}
 """
 
 
@@ -85,36 +89,50 @@ def extract_pdf_text(path: Path) -> str:
     return "\n".join(parts).strip()
 
 
-def summarize_denial(client: OpenAI, model: str, document_text: str) -> str:
-    """Отправляет текст решения в OpenAI и возвращает одну строку-резюме причины отказа.
+def _tsv_cell(value: str) -> str:
+    """Одна ячейка TSV: без переводов строк и табов."""
+    return value.replace("\n", " ").replace("\t", " ").strip()
 
-    Если после извлечения текста ничего нет — API не вызываем: сразу возвращаем понятное
-    сообщение (часто это скан без текстового слоя).
 
-    В промпт попадает уже усечённый при извлечении текст (см. PDF_TEXT_MAX_CHARS).
+def analyze_case(client: OpenAI, model: str, document_text: str) -> tuple[str, str]:
+    """Отправляет текст в OpenAI; возвращает (профессия заявителя петиции, причина отказа одним предложением).
 
-    temperature=0.2 — слегка снижаем случайность, чтобы формулировки по похожим делам
-    были стабильнее.
-
-    Ответ модели нормализуется: схлопываем пробелы и переводы строк в одну строку —
-    так проще писать в TSV-строку (одна строка на файл в итоговом файле).
+    Профессия и отказ приходят в одном JSON-ответе (response_format json_object).
     """
     text = document_text.strip()
     if not text:
-        return "Текст из PDF извлечь не удалось (возможно, скан без OCR)."
+        return (
+            "не применимо",
+            "Текст из PDF извлечь не удалось (возможно, скан без OCR).",
+        )
 
     resp = client.chat.completions.create(
         model=model,
+        response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": USER_TEMPLATE.format(text=text)},
+            {"role": "system", "content": SYSTEM_PROMPT_JSON},
+            {"role": "user", "content": USER_TEMPLATE_JSON.format(text=text)},
         ],
         temperature=0.2,
     )
     choice = resp.choices[0].message.content
     if not choice:
-        return "Пустой ответ модели."
-    return " ".join(choice.strip().split())
+        return ("не указано", "Пустой ответ модели.")
+
+    try:
+        data = json.loads(choice)
+    except json.JSONDecodeError:
+        return ("не указано", _tsv_cell(choice))
+
+    prof = data.get("profession")
+    denial = data.get("denial")
+    profession_s = _tsv_cell(prof) if isinstance(prof, str) else _tsv_cell(str(prof))
+    if not profession_s:
+        profession_s = "не указано в тексте"
+    denial_s = _tsv_cell(denial) if isinstance(denial, str) else _tsv_cell(str(denial))
+    if not denial_s:
+        denial_s = "Ответ модели без поля denial."
+    return (profession_s, denial_s)
 
 
 def main() -> None:
@@ -177,13 +195,14 @@ def main() -> None:
         print(f"[{i}/{len(pdfs)}] {name}", flush=True)
         try:
             raw = extract_pdf_text(pdf_path)
-            summary = summarize_denial(client, args.model, raw)
+            profession, denial = analyze_case(client, args.model, raw)
         except Exception as e:
             # Один битый файл не должен валить весь прогон: пишем причину в ту же таблицу.
-            summary = f"Ошибка обработки: {e}"
-        # Формат строки: TSV — имя файла, табуляция, ответ (без внутренних табов/переносов).
-        safe_summary = summary.replace("\n", " ").replace("\t", " ").strip()
-        lines.append(f"{name}\t{safe_summary}")
+            profession = "—"
+            denial = f"Ошибка обработки: {e}"
+        lines.append(
+            f"{name}\t{_tsv_cell(profession)}\t{_tsv_cell(denial)}",
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Полная перезапись файла: повторный запуск заменяет сводку целиком, а не дублирует.
