@@ -1,4 +1,8 @@
-"""Загрузка PDF со страницы USCIS AAO non-precedent decisions."""
+"""Загрузка PDF со страницы USCIS AAO non-precedent decisions.
+
+Скрипт обходит страницы списка решений, находит ссылки на .pdf и сохраняет
+файлы локально; успешные URL дополнительно пишутся в pdf_urls.txt.
+"""
 import os
 import sys
 from urllib.parse import urljoin
@@ -6,7 +10,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-# Корень проекта (родитель папки scripts/)
+# Корень проекта (родитель папки scripts/) — пути к files/ не зависят от cwd
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Стартовый URL списка решений (фильтры в query: месяц, год, число строк на страницу)
@@ -31,6 +35,7 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
         os.makedirs(output_dir)
 
     urls_log_path = os.path.join(output_dir, PDF_URLS_FILENAME)
+    # Минимальный User-Agent: часть сайтов отдаёт 403 без «браузерного» заголовка
     headers = {"User-Agent": "Mozilla/5.0"}
     downloaded = 0
     failed = 0
@@ -39,7 +44,7 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
     current_url: str | None = url
     page_num = 1
 
-    # Пустой файл в начале запуска; дальше только успешные URL
+    # Пустой файл в начале запуска; дальше только успешные URL (append не используем)
     with open(urls_log_path, "w", encoding="utf-8") as url_log:
         while current_url:
             if current_url in seen_urls:
@@ -56,13 +61,16 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
             page_base = response.url
             for link in soup.find_all("a", href=True):
                 href = link["href"]
+                # На странице могут быть иные ссылки; нас интересуют только PDF
                 if not href.endswith(".pdf"):
                     continue
                 file_url = urljoin(page_base, href)
+                # Имя файла — последний сегмент пути (как на сервере)
                 file_name = os.path.join(output_dir, href.split("/")[-1])
 
                 print(f"Загрузка: {file_url}")
                 try:
+                    # PDF обычно крупнее HTML — даём больший таймаут
                     file_data = requests.get(file_url, headers=headers, timeout=120)
                     file_data.raise_for_status()
                     with open(file_name, "wb") as f:
@@ -73,7 +81,7 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
                     failed += 1
                     print(f"Ошибка при загрузке {file_url}: {e}", file=sys.stderr)
 
-            # Следующая страница списка (не путать с навигацией по сайту)
+            # Drupal pager: rel="next" ведёт на следующую страницу того же списка
             next_a = soup.select_one('a[rel="next"]')
             if not next_a or not next_a.get("href"):
                 break
