@@ -40,7 +40,7 @@ OUTPUT_FILENAME = "summary_denids.txt"
 # Максимум символов, извлекаемых из PDF (начало документа; перевод строки между страницами входит в лимит).
 PDF_TEXT_MAX_CHARS = 12_000
 # Для тестов: не более стольких PDF подряд (после sorted по имени). None — обработать все файлы в каталоге.
-MAX_PDF_FILES_FOR_TEST: int | None = 20
+MAX_PDF_FILES_FOR_TEST: int | None = None
 
 # Ответ только JSON (режим json_object у API); поля парсятся в analyze_case.
 SYSTEM_PROMPT_JSON = (
