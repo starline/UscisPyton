@@ -3,6 +3,7 @@
 Скрипт обходит страницы списка решений, находит ссылки на .pdf и сохраняет
 файлы локально; успешные URL дополнительно пишутся в pdf_urls.txt.
 """
+
 import os
 import sys
 from urllib.parse import urljoin
@@ -14,11 +15,11 @@ from bs4 import BeautifulSoup
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Стартовый URL списка решений (фильтры в query: месяц, год, число строк на страницу)
-TARGET_URL = (
-    "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non-precedent-decisions?uri_1=18&m=All&y=2&items_per_page=100"
-)
+TARGET_URL = "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non-precedent-decisions?uri_1=18&m=All&y=2&items_per_page=100"
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "files", "uscis_pdfs")
-PDF_URLS_FILENAME = "pdf_urls.txt"  # успешные URL, файл очищается в начале каждого запуска
+PDF_URLS_FILENAME = (
+    "pdf_urls.txt"  # успешные URL, файл очищается в начале каждого запуска
+)
 
 
 def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:

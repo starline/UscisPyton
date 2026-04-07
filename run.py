@@ -3,6 +3,7 @@
 Пример: python run.py uscis_pdf_download
 Список: python run.py --list
 """
+
 from __future__ import annotations
 
 import subprocess
