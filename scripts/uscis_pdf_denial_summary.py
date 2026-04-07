@@ -1,7 +1,8 @@
 """Извлечение текста из PDF и краткое описание причины отказа через OpenAI.
 
 Общий процесс (конвейер):
-  1) Находим все файлы *.pdf в каталоге (по умолчанию files/uscis_pdfs).
+  1) Находим файлы *.pdf в каталоге (по умолчанию files/uscis_pdfs); при тестовом лимите
+     берём только первые N по имени (см. MAX_PDF_FILES_FOR_TEST).
   2) Для каждого PDF последовательно извлекаем текст (не более первых 12 000 символов,
      считая переводы строк между страницами; дальнейшие страницы не читаются) — без OCR,
      только встроенный текст; отсканированные страницы без слоя текста дадут пустой результат.
@@ -13,6 +14,8 @@
 Переменные окружения:
   OPENAI_API_KEY — ключ API (обязательно)
   OPENAI_MODEL   — модель чата (по умолчанию gpt-4o-mini)
+
+Файл .env в корне проекта (рядом с run.py) подхватывается автоматически при запуске скрипта.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from openai import OpenAI
 from pypdf import PdfReader
 
@@ -32,6 +36,8 @@ DEFAULT_PDF_DIR = PROJECT_ROOT / "files" / "uscis_pdfs"
 OUTPUT_FILENAME = "summary_denids.txt"
 # Максимум символов, извлекаемых из PDF (начало документа; перевод строки между страницами входит в лимит).
 PDF_TEXT_MAX_CHARS = 12_000
+# Для тестов: не более стольких PDF подряд (после sorted по имени). None — обработать все файлы в каталоге.
+MAX_PDF_FILES_FOR_TEST: int | None = 5
 
 # Системное сообщение задаёт «роль» модели и формат ответа (одно предложение, русский язык).
 SYSTEM_PROMPT = (
@@ -113,6 +119,9 @@ def summarize_denial(client: OpenAI, model: str, document_text: str) -> str:
 
 def main() -> None:
     """Точка входа: разбор аргументов, проверки окружения, обход PDF, запись результата."""
+    # Подгружаем OPENAI_* из .env в корне проекта (удобно при запуске scripts/... напрямую).
+    load_dotenv(PROJECT_ROOT / ".env")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dir",
@@ -138,7 +147,7 @@ def main() -> None:
         print(f"Каталог не найден: {pdf_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # Ключ не храним в коде; ожидается экспорт в окружении или .env через оболочку/IDE.
+    # Ключ не храним в коде: переменная окружения или строка в .env (см. load_dotenv выше).
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("Задайте переменную окружения OPENAI_API_KEY.", file=sys.stderr)
@@ -152,6 +161,12 @@ def main() -> None:
     if not pdfs:
         print(f"В {pdf_dir} нет файлов .pdf")
         sys.exit(0)
+    if MAX_PDF_FILES_FOR_TEST is not None:
+        pdfs = pdfs[:MAX_PDF_FILES_FOR_TEST]
+        print(
+            f"Режим теста: обрабатывается не более {len(pdfs)} PDF (MAX_PDF_FILES_FOR_TEST).",
+            flush=True,
+        )
 
     # Один клиент на весь прогон — переиспользование соединений там, где это поддерживает SDK.
     client = OpenAI(api_key=api_key)
