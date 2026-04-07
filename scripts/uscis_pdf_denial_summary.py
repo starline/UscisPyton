@@ -1,7 +1,7 @@
 """Извлечение текста из PDF и краткое описание причины отказа через OpenAI.
 
 Общий процесс (конвейер):
-  1) Находим файлы *.pdf в каталоге (по умолчанию files/uscis_pdfs); при тестовом лимите
+  1) Находим файлы *.pdf в каталоге (по умолчанию files/uscis_pdfs/pdfs); при тестовом лимите
      берём только первые N по имени (см. MAX_PDF_FILES_FOR_TEST).
   2) Для каждого PDF последовательно извлекаем текст (не более первых 12 000 символов,
      считая переводы строк между страницами; дальнейшие страницы не читаются) — без OCR,
@@ -34,7 +34,8 @@ from pypdf import PdfReader
 # Корень репозитория: scripts/ -> родитель = проект; так пути не зависят от текущей папки запуска.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Каталог по умолчанию совпадает с тем, куда uscis_pdf_download.py кладёт решения.
-DEFAULT_PDF_DIR = PROJECT_ROOT / "files" / "uscis_pdfs"
+DEFAULT_PDF_DIR = PROJECT_ROOT / "files" / "uscis_pdfs" / "pdfs"
+USCIS_PDFS_DIR = PROJECT_ROOT / "files" / "uscis_pdfs"
 OUTPUT_FILENAME = "summary_denids.txt"
 # Максимум символов, извлекаемых из PDF (начало документа; перевод строки между страницами входит в лимит).
 PDF_TEXT_MAX_CHARS = 12_000
@@ -162,7 +163,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=None,
-        help="Файл результата (по умолчанию: <каталог>/summary_denids.txt)",
+        help="Файл результата (по умолчанию: files/uscis_pdfs/summary_denids.txt или <каталог>/summary при своём --dir)",
     )
     parser.add_argument(
         "--model",
@@ -182,8 +183,12 @@ def main() -> None:
         print("Задайте переменную окружения OPENAI_API_KEY.", file=sys.stderr)
         sys.exit(1)
 
-    # Итоговый файл по умолчанию лежит рядом с PDF, чтобы один каталог = один «пакет» анализа.
-    out_path = args.output if args.output else pdf_dir / OUTPUT_FILENAME
+    # По умолчанию при стандартном каталоге — рядом с pdf_urls.txt; иначе — в том же каталоге, что и PDF.
+    out_path = args.output if args.output else (
+        USCIS_PDFS_DIR / OUTPUT_FILENAME
+        if pdf_dir == DEFAULT_PDF_DIR
+        else pdf_dir / OUTPUT_FILENAME
+    )
 
     # sorted() даёт воспроизводимый порядок строк в summary при повторных запусках.
     pdfs = sorted(pdf_dir.glob("*.pdf"))

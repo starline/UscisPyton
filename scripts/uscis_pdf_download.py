@@ -1,7 +1,7 @@
 """Загрузка PDF со страницы USCIS AAO non-precedent decisions.
 
 Скрипт обходит страницы списка решений, находит ссылки на .pdf и сохраняет
-файлы локально; успешные URL дополнительно пишутся в pdf_urls.txt.
+файлы в files/uscis_pdfs/pdfs; успешные URL пишутся в files/uscis_pdfs/pdf_urls.txt.
 """
 
 import os
@@ -14,9 +14,12 @@ from bs4 import BeautifulSoup
 # Корень проекта (родитель папки scripts/) — пути к files/ не зависят от cwd
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Каталог пакета: метаданные (pdf_urls.txt) в корне; сами PDF — в подпапке pdfs/
+USCIS_PDFS_ROOT = os.path.join(PROJECT_ROOT, "files", "uscis_pdfs")
+PDF_OUTPUT_DIR = os.path.join(USCIS_PDFS_ROOT, "pdfs")
+
 # Стартовый URL списка решений (фильтры в query: месяц, год, число строк на страницу)
 TARGET_URL = "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non-precedent-decisions?uri_1=18&m=All&y=2&items_per_page=100"
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "files", "uscis_pdfs")
 PDF_URLS_FILENAME = (
     "pdf_urls.txt"  # успешные URL, файл очищается в начале каждого запуска
 )
@@ -29,13 +32,13 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
     ``<a rel="next" href="...">``. На последней странице этой ссылки нет.
 
     :param url: URL первой страницы списка
-    :param output_dir: каталог для сохранения PDF; в нём же при каждом запуске пересоздаётся ``pdf_urls.txt`` (только успешные URL)
+    :param output_dir: каталог для сохранения PDF (обычно ``.../uscis_pdfs/pdfs``); ``pdf_urls.txt`` — в ``USCIS_PDFS_ROOT``
     :return: (число успешно скачанных, число неудачных) — ошибки отдельных PDF не прерывают цикл
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    urls_log_path = os.path.join(output_dir, PDF_URLS_FILENAME)
+    urls_log_path = os.path.join(USCIS_PDFS_ROOT, PDF_URLS_FILENAME)
     # Минимальный User-Agent: часть сайтов отдаёт 403 без «браузерного» заголовка
     headers = {"User-Agent": "Mozilla/5.0"}
     downloaded = 0
@@ -94,7 +97,7 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
 
 if __name__ == "__main__":
     # Запуск с параметрами по умолчанию из констант выше
-    n, err = download_pdfs(TARGET_URL, OUTPUT_DIR)
+    n, err = download_pdfs(TARGET_URL, PDF_OUTPUT_DIR)
     print(f"Готово! Скачано файлов: {n}")
     if err:
         print(f"Не удалось скачать: {err} файлов")
