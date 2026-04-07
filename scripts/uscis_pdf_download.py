@@ -14,7 +14,7 @@ TARGET_URL = (
     "https://www.uscis.gov/administrative-appeals/aao-decisions/"
     "aao-non-precedent-decisions?uri_1=18&m=All&y=1&items_per_page=100"
 )
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "uscis_pdfs")
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "files", "uscis_pdfs")
 
 
 def download_pdfs(url: str, output_dir: str) -> None:
