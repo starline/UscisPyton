@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 files/*
 !files/.gitkeep
+!files/uscis_pdfs/
+files/uscis_pdfs/*
+!files/uscis_pdfs/.gitkeep
