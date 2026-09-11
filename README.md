@@ -143,8 +143,11 @@ Codes from the [AAO non-precedent decisions](https://www.uscis.gov/administrativ
 ### `uscis_pdf_denial_summary`
 
 - **Input:** `*.pdf` under `files/uscis_pdfs/pdfs/` by default (including folders like `18/2025/`; override with `--dir`).
-- **Output:** TSV `files/uscis_pdfs/summary_denials.txt` (tab-separated: `filename`, profession summary, denial summary), unless you pass `--output`.
-- **Options:** `--dir`, `--output`, `--model` (or use `OPENAI_MODEL` in the environment).
+- **Output:**
+  - TSV `files/uscis_pdfs/summary_<topic>.txt` (e.g. `summary_18.txt`; tab-separated: `filename`, `category`, profession, denial). One file per AAO topic code when several topics are present. Override with `--output` for a single combined file.
+  - PDF copies under `files/uscis_pdfs/classified/<category>/…` (same relative path as under `pdfs/`). Disable with `--no-organize`.
+- **Category** (`niw` / `eb2_standard` / `unclear`): topic `18` mixes NIW and ordinary EB-2; the script separates them via text markers (e.g. *national interest waiver*, *Dhanasar*) plus the model’s `category` field. Keyword NIW hits win over the model.
+- **Options:** `--dir`, `--output`, `--model` (or `OPENAI_MODEL`), `--organize` / `--no-organize`, `--classified-dir`.
 
 **Note:** Only the first ~12,000 characters of extracted text per PDF are sent to the model. Scanned PDFs without a text layer will produce empty extraction and a placeholder explanation.
 
@@ -155,7 +158,7 @@ Codes from the [AAO non-precedent decisions](https://www.uscis.gov/administrativ
 | `run.py` | Launcher: `python run.py <script_name> [args...]` |
 | `scripts/uscis_pdf_download.py` | Fetch AAO non-precedent PDFs |
 | `scripts/uscis_pdf_denial_summary.py` | OpenAI-based summaries |
-| `files/uscis_pdfs/` | Downloaded PDFs under `pdfs/<topic>/<year>/`, URL log, and summary TSV |
+| `files/uscis_pdfs/` | Downloaded PDFs under `pdfs/<topic>/<year>/`, `classified/<category>/…`, URL log, and `summary_<topic>.txt` |
 | `requirements.txt` | Python dependencies |
 | `.env` | Local secrets (not committed); see `.env.example` |
 

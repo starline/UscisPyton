@@ -36,6 +36,12 @@ PDF_URLS_FILENAME = (
 # Пауза между запросами PDF, чтобы не перегружать сайт
 REQUEST_DELAY_SEC = 0.5
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
+PDF_MAGIC = b"%PDF-"
+
+
+def _is_pdf_bytes(data: bytes) -> bool:
+    """True, если содержимое начинается с сигнатуры PDF."""
+    return data.startswith(PDF_MAGIC)
 
 
 def _select_options(soup: BeautifulSoup, name: str) -> dict[str, str]:
@@ -105,6 +111,8 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int, int]:
     Пагинация на сайте — Drupal mini-pager: следующая страница задаётся ссылкой
     ``<a rel="next" href="...">``. На последней странице этой ссылки нет.
     Уже существующие непустые файлы в ``output_dir`` не скачиваются повторно.
+    Повторные ссылки на один и тот же PDF (URL или имя файла) пропускаются.
+    Ответ без сигнатуры ``%PDF-`` не сохраняется.
 
     :param url: URL первой страницы списка
     :param output_dir: каталог для сохранения PDF (обычно ``.../uscis_pdfs/pdfs/<topic>/<year>``); ``pdf_urls.txt`` — в ``USCIS_PDFS_ROOT``
@@ -119,17 +127,20 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int, int]:
     skipped = 0
     failed = 0
     # Защита от зацикливания, если пагинация вернёт тот же URL
-    seen_urls: set[str] = set()
+    seen_page_urls: set[str] = set()
+    # Один PDF — одна строка в логе (на выдаче AAO ссылки иногда дублируются)
+    seen_pdf_urls: set[str] = set()
+    seen_pdf_names: set[str] = set()
     current_url: str | None = url
     page_num = 1
 
     # Пустой файл в начале запуска; дальше URL существующих и новых PDF
     with open(urls_log_path, "w", encoding="utf-8") as url_log:
         while current_url:
-            if current_url in seen_urls:
+            if current_url in seen_page_urls:
                 print(f"Повтор URL, остановка: {current_url}", file=sys.stderr)
                 break
-            seen_urls.add(current_url)
+            seen_page_urls.add(current_url)
 
             print(f"Страница {page_num}: {current_url}")
             response = requests.get(current_url, headers=headers, timeout=60)
@@ -144,8 +155,16 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int, int]:
                 if not href.lower().endswith(".pdf"):
                     continue
                 file_url = urljoin(page_base, href)
+                if file_url in seen_pdf_urls:
+                    continue
                 # Имя файла — последний сегмент пути (как на сервере)
-                file_name = os.path.join(output_dir, unquote(href.split("/")[-1]))
+                base_name = unquote(href.split("/")[-1])
+                if base_name in seen_pdf_names:
+                    seen_pdf_urls.add(file_url)
+                    continue
+                file_name = os.path.join(output_dir, base_name)
+                seen_pdf_urls.add(file_url)
+                seen_pdf_names.add(base_name)
 
                 if os.path.isfile(file_name) and os.path.getsize(file_name) > 0:
                     print(f"Уже есть, пропуск: {file_name}")
@@ -158,8 +177,14 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int, int]:
                     # PDF обычно крупнее HTML — даём больший таймаут
                     file_data = requests.get(file_url, headers=headers, timeout=120)
                     file_data.raise_for_status()
+                    content = file_data.content
+                    if not _is_pdf_bytes(content):
+                        ctype = (file_data.headers.get("Content-Type") or "").split(";")[0].strip()
+                        raise ValueError(
+                            f"ответ не PDF (magic={content[:8]!r}, Content-Type={ctype!r})"
+                        )
                     with open(file_name, "wb") as f:
-                        f.write(file_data.content)
+                        f.write(content)
                     downloaded += 1
                     url_log.write(file_url + "\n")
                 except Exception as e:
