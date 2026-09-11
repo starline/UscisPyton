@@ -1,8 +1,8 @@
 """Извлечение текста из PDF и краткое описание причины отказа через OpenAI.
 
 Общий процесс (конвейер):
-  1) Находим файлы *.pdf в каталоге (по умолчанию files/uscis_pdfs/pdfs); при тестовом лимите
-     берём только первые N по имени (см. MAX_PDF_FILES_FOR_TEST).
+  1) Находим файлы *.pdf в каталоге и подпапках тем/годов (по умолчанию files/uscis_pdfs/pdfs);
+     при тестовом лимите берём только первые N по имени (см. MAX_PDF_FILES_FOR_TEST).
   2) Для каждого PDF последовательно извлекаем текст (не более первых 12 000 символов,
      считая переводы строк между страницами; дальнейшие страницы не читаются) — без OCR,
      только встроенный текст; отсканированные страницы без слоя текста дадут пустой результат.
@@ -194,9 +194,9 @@ def main() -> None:
         else pdf_dir / OUTPUT_FILENAME
     )
 
-    # sorted() даёт воспроизводимый порядок; учитываем .pdf / .PDF.
+    # sorted() даёт воспроизводимый порядок; *.pdf во всех подпапках тем (18/, 19/, …).
     pdfs = sorted(
-        p for p in pdf_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"
+        p for p in pdf_dir.rglob("*.pdf") if p.is_file()
     )
     if not pdfs:
         print(f"В {pdf_dir} нет файлов .pdf")
@@ -213,7 +213,10 @@ def main() -> None:
 
     lines: list[str] = []
     for i, pdf_path in enumerate(pdfs, 1):
-        name = pdf_path.name
+        try:
+            name = str(pdf_path.relative_to(pdf_dir))
+        except ValueError:
+            name = pdf_path.name
         print(f"[{i}/{len(pdfs)}] {name}", flush=True)
         try:
             raw = extract_pdf_text(pdf_path)
