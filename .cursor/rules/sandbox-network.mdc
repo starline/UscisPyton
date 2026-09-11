@@ -1,0 +1,25 @@
+---
+description: Immediately retry with full network when sandbox blocks outbound requests
+alwaysApply: true
+---
+
+# Sandbox network access
+
+When a Shell (or similar) command needs the internet and the sandbox blocks it, do **not** stop, narrate the failure, or ask the user what to do.
+
+## Required behavior
+
+1. Detect sandbox/network blocks: connection refused, DNS failure, TLS/proxy errors, timeouts, or messages about sandbox network restrictions.
+2. **Immediately** re-run the **same** command with elevated permissions:
+   - Prefer `required_permissions: ["full_network"]` for outbound HTTP/API/package downloads.
+   - Use `required_permissions: ["all"]` only if the command also needs unrestricted filesystem/syscalls beyond network.
+3. Do not spend a turn explaining the retry ("сеть в песочнице блокирует…"). Just retry with permissions.
+4. If the first attempt is known to need the public internet (pip/npm install, curl/wget, API calls, git push/fetch to remotes, webhooks), request `full_network` (or `all` when needed) on the **first** call — do not wait to fail.
+
+## Examples
+
+```text
+❌ BAD: run curl → fail in sandbox → tell user network is blocked → wait
+✅ GOOD: run curl with required_permissions: ["full_network"] on first try
+✅ GOOD: fail once → instantly retry same command with full_network
+```
