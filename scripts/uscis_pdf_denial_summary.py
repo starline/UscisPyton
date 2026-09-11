@@ -10,7 +10,7 @@
      (профессия, должность, сфера) и развёрнутое описание отказа с указанием, какие доказательства
      отклонены или признаны недостаточными (на русском).
   4) Для каждого файла одна строка TSV: «имя.pdf<TAB>профессия/должность/сфера<TAB>причина отказа и доказательства»
-     → summary_denids.txt (UTF-8).
+     → summary_denials.txt (UTF-8).
 
 Переменные окружения:
   OPENAI_API_KEY — ключ API (обязательно)
@@ -36,7 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Каталог по умолчанию совпадает с тем, куда uscis_pdf_download.py кладёт решения.
 DEFAULT_PDF_DIR = PROJECT_ROOT / "files" / "uscis_pdfs" / "pdfs"
 USCIS_PDFS_DIR = PROJECT_ROOT / "files" / "uscis_pdfs"
-OUTPUT_FILENAME = "summary_denids.txt"
+OUTPUT_FILENAME = "summary_denials.txt"
 # Максимум символов, извлекаемых из PDF (начало документа; перевод строки между страницами входит в лимит).
 PDF_TEXT_MAX_CHARS = 12_000
 # Для тестов: не более стольких PDF подряд (после sorted по имени). None — обработать все файлы в каталоге.
@@ -49,7 +49,7 @@ SYSTEM_PROMPT_JSON = (
     "Поля profession и denial могут быть из нескольких предложений, если нужно для полноты."
 )
 
-# В {text} — фрагмент решения. Модель возвращает profession + denial для строки summary_denids.txt.
+# В {text} — фрагмент решения. Модель возвращает profession + denial для строки summary_denials.txt.
 USER_TEMPLATE_JSON = """Ниже фрагмент текста решения по делу (петиция/апелляция и т.д.).
 
 Сделай:
@@ -163,7 +163,10 @@ def main() -> None:
         "--output",
         type=Path,
         default=None,
-        help="Файл результата (по умолчанию: files/uscis_pdfs/summary_denids.txt или <каталог>/summary при своём --dir)",
+        help=(
+            "Файл результата (по умолчанию: files/uscis_pdfs/summary_denials.txt "
+            "или <каталог>/summary_denials.txt при своём --dir)"
+        ),
     )
     parser.add_argument(
         "--model",
@@ -172,7 +175,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    pdf_dir: Path = args.dir
+    pdf_dir: Path = args.dir.resolve()
     if not pdf_dir.is_dir():
         print(f"Каталог не найден: {pdf_dir}", file=sys.stderr)
         sys.exit(1)
@@ -184,14 +187,17 @@ def main() -> None:
         sys.exit(1)
 
     # По умолчанию при стандартном каталоге — рядом с pdf_urls.txt; иначе — в том же каталоге, что и PDF.
+    default_pdf_dir = DEFAULT_PDF_DIR.resolve()
     out_path = args.output if args.output else (
         USCIS_PDFS_DIR / OUTPUT_FILENAME
-        if pdf_dir == DEFAULT_PDF_DIR
+        if pdf_dir == default_pdf_dir
         else pdf_dir / OUTPUT_FILENAME
     )
 
-    # sorted() даёт воспроизводимый порядок строк в summary при повторных запусках.
-    pdfs = sorted(pdf_dir.glob("*.pdf"))
+    # sorted() даёт воспроизводимый порядок; учитываем .pdf / .PDF.
+    pdfs = sorted(
+        p for p in pdf_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"
+    )
     if not pdfs:
         print(f"В {pdf_dir} нет файлов .pdf")
         sys.exit(0)

@@ -1,5 +1,7 @@
 # UscisPython
 
+![UscisPython preview](assets/preview.jpg)
+
 Small Python toolkit for working with **USCIS Administrative Appeals Office (AAO) non-precedent decisions**: bulk-download decision PDFs from the public listing, then summarize each case (beneficiary role and denial rationale) using the OpenAI API.
 
 ## Features
@@ -50,7 +52,7 @@ python scripts/uscis_pdf_denial_summary.py --help
 ### `uscis_pdf_denial_summary`
 
 - **Input:** `*.pdf` under `files/uscis_pdfs/pdfs/` by default (override with `--dir`).
-- **Output:** TSV `files/uscis_pdfs/summary_denids.txt` (tab-separated: `filename`, profession summary, denial summary), unless you pass `--output`.
+- **Output:** TSV `files/uscis_pdfs/summary_denials.txt` (tab-separated: `filename`, profession summary, denial summary), unless you pass `--output`.
 - **Options:** `--dir`, `--output`, `--model` (or use `OPENAI_MODEL` in the environment).
 
 **Note:** Only the first ~12,000 characters of extracted text per PDF are sent to the model. Scanned PDFs without a text layer will produce empty extraction and a placeholder explanation.

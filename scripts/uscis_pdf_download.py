@@ -4,9 +4,13 @@
 файлы в files/uscis_pdfs/pdfs; успешные URL пишутся в files/uscis_pdfs/pdf_urls.txt.
 """
 
+from __future__ import annotations
+
+import argparse
 import os
 import sys
-from urllib.parse import urljoin
+import time
+from urllib.parse import urljoin, unquote
 
 import requests
 from bs4 import BeautifulSoup
@@ -23,6 +27,8 @@ TARGET_URL = "https://www.uscis.gov/administrative-appeals/aao-decisions/aao-non
 PDF_URLS_FILENAME = (
     "pdf_urls.txt"  # успешные URL, файл очищается в начале каждого запуска
 )
+# Пауза между запросами PDF, чтобы не перегружать сайт
+REQUEST_DELAY_SEC = 0.5
 
 
 def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
@@ -66,11 +72,11 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
             for link in soup.find_all("a", href=True):
                 href = link["href"]
                 # На странице могут быть иные ссылки; нас интересуют только PDF
-                if not href.endswith(".pdf"):
+                if not href.lower().endswith(".pdf"):
                     continue
                 file_url = urljoin(page_base, href)
                 # Имя файла — последний сегмент пути (как на сервере)
-                file_name = os.path.join(output_dir, href.split("/")[-1])
+                file_name = os.path.join(output_dir, unquote(href.split("/")[-1]))
 
                 print(f"Загрузка: {file_url}")
                 try:
@@ -84,6 +90,7 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
                 except Exception as e:
                     failed += 1
                     print(f"Ошибка при загрузке {file_url}: {e}", file=sys.stderr)
+                time.sleep(REQUEST_DELAY_SEC)
 
             # Drupal pager: rel="next" ведёт на следующую страницу того же списка
             next_a = soup.select_one('a[rel="next"]')
@@ -95,9 +102,25 @@ def download_pdfs(url: str, output_dir: str) -> tuple[int, int]:
     return downloaded, failed
 
 
-if __name__ == "__main__":
-    # Запуск с параметрами по умолчанию из констант выше
-    n, err = download_pdfs(TARGET_URL, PDF_OUTPUT_DIR)
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--url",
+        default=TARGET_URL,
+        help="Стартовый URL списка решений",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=PDF_OUTPUT_DIR,
+        help=f"Каталог для PDF (по умолчанию: {PDF_OUTPUT_DIR})",
+    )
+    args = parser.parse_args()
+
+    n, err = download_pdfs(args.url, args.output_dir)
     print(f"Готово! Скачано файлов: {n}")
     if err:
         print(f"Не удалось скачать: {err} файлов")
+
+
+if __name__ == "__main__":
+    main()
